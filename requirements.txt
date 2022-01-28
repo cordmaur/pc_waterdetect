@@ -1,0 +1,8 @@
+# geeS2downloader 
+git+https://github.com/cordmaur/GEES2Downloader.git@main
+xarray
+rasterio
+rioxarray
+stackstac
+earthengine-api
+planetary-computer

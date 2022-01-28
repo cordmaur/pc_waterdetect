@@ -14,7 +14,6 @@ from sklearn.naive_bayes import GaussianNB
 from skimage.morphology import binary_opening, diamond
 
 from joblib import Parallel, delayed
-from multiprocessing import Pool
 from functools import partial
 import matplotlib.pyplot as plt
 
@@ -79,11 +78,16 @@ def open_image(image, bands, out_shape=(10980, 10980), n_jobs=4):
     # get the arrays to reshape
     reshape_arrays = {band: array for band, array in datasets.items() if array.shape != out_shape}
     
-    with Pool(n_jobs) as p:
-        reshaped_arrays = p.map(partial(reshape, out_shape=out_shape), reshape_arrays.values())
-        for band, reshaped in zip(reshape_arrays.keys(), reshaped_arrays):
-            print(f'resampling {band} to {out_shape}')
-            datasets[band] = reshaped
+    reshaped_arrays = Parallel(n_jobs)(delayed(reshape)(reshape_array, out_shape) for reshape_array in reshape_arrays.values())
+    for band, reshaped in zip(reshape_arrays.keys(), reshaped_arrays):
+        print(f'resampling {band} to {out_shape}')
+        datasets[band] = reshaped
+    
+    # with Pool(n_jobs) as p:
+    #     reshaped_arrays = p.map(partial(reshape, out_shape=out_shape), reshape_arrays.values())
+    #     for band, reshaped in zip(reshape_arrays.keys(), reshaped_arrays):
+    #         print(f'resampling {band} to {out_shape}')
+    #         datasets[band] = reshaped
 
     return xr.Dataset(datasets)
 
@@ -438,10 +442,16 @@ class WaterDetect:
         else:
             thumb = np.ma.array(data=self.img[band][::10, ::10],
                                 mask=self.img['mask'][::10, ::10])
-        
+
+        # eliminate negative values
         if thumb.min() < 0:
             thumb = thumb - thumb.min()
-        
+
+        # check if the array to be ploted is continuous to clip on 1
+        if not np.issubdtype(array.dtype, np.integer):
+            array[array > 1] = 1
+            array = array.astype('float32')
+
         # force scale == 1 for SCL band
         scale = 1 if band == 'SCL' else scale
         
@@ -465,9 +475,6 @@ class WaterDetect:
             else:
                 cmap = 'viridis'
 
-            # check if the array to be ploted is continuous to clip on 1
-            if not np.issubdtype(array.dtype, np.integer):
-                array[array > 1] = 1
 
             # display the image
             ax.imshow(array, cmap=cmap)

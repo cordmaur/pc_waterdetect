@@ -448,9 +448,9 @@ class WaterDetect:
             thumb = thumb - thumb.min()
 
         # check if the array to be ploted is continuous to clip on 1
-        if not np.issubdtype(array.dtype, np.integer):
-            array[array > 1] = 1
-            array = array.astype('float32')
+        if not np.issubdtype(thumb.dtype, np.integer):
+            thumb[thumb > 1] = 1
+            thumb = thumb.astype('float32')
 
         # force scale == 1 for SCL band
         scale = 1 if band == 'SCL' else scale

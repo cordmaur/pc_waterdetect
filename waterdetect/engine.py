@@ -66,37 +66,39 @@ def open_image(image, bands, out_shape=(10980, 10980), n_jobs=4, retries=3):
     
     print(f'Getting image: {image.id}')
     # sign the assets from the image
-    assets = {band: pc.sign(image.assets[band].href) for band in bands}
-    
-    # open the datasets (bands)
-    datasets = {band: xrio.open_rasterio(asset).squeeze() for band, asset in assets.items()}
-    
-    # downaload and rescale the bands correctly
-    # this part may have connection errors and it will retry if not succeed
-    for band in datasets:
-        print(f'Downloading {band}')
-        counter = retries
-        while counter > 0:
-            try:
+    while retries > 0:
+        try:
+            # sign the assets to grant access to them
+            assets = {band: pc.sign(image.assets[band].href) for band in bands}
+
+            # open the datasets (bands)
+            datasets = {band: xrio.open_rasterio(asset).squeeze() for band, asset in assets.items()}
+
+            # downaload and rescale the bands correctly
+            # this part may have connection errors and it will retry if not succeed
+            for band in datasets:
+                print(f'Downloading {band}')
                 if band != 'SCL':
                     datasets[band] = (datasets[band]/10000).astype('float32')
                 else:
                     datasets[band] = (datasets[band]*1).astype('uint8')
-                
-                counter = 0
-                    
-            except Exception as e:
-                print(f'Problem downloading band {band}.')
-                print(e)
-                
-                counter -= 1
-                
-                if counter > 0:
-                    print(f'Waiting 60sec. {counter} Retries left')
-                    sleep(61)
-                else:
-                    print('Skipping...')
-                    raise Exception(f'Band {band} could not be downloaded correctly')
+
+            retries = 0
+        
+        # if any problem occurred, will repeat the whole process
+        except Exception as e:
+            print(f'Problem downloading band {band}.')
+            print(e)
+            
+            # decrease the retries counter
+            retries -= 1
+
+            if retries > 0:
+                print(f'Waiting 60sec. {retries} Retries left')
+                sleep(61)
+            else:
+                print('Skipping...')
+                raise Exception(f'Band {band} could not be downloaded correctly')
                     
     # get the arrays to reshape
     reshape_arrays = {band: array for band, array in datasets.items() if array.shape != out_shape}

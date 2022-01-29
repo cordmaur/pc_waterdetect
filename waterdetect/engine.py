@@ -72,13 +72,18 @@ def open_image(image, bands, out_shape=(10980, 10980), n_jobs=4):
     
     # rescale
     for band in datasets:
+        print(f'Downloading {band}')
         if band != 'SCL':
             datasets[band] = (datasets[band]/10000).astype('float32')
+#        else:
+#            datasets[band] = (datasets[band]*1).astype('uint8')
 
     # get the arrays to reshape
     reshape_arrays = {band: array for band, array in datasets.items() if array.shape != out_shape}
     
-    reshaped_arrays = Parallel(n_jobs)(delayed(reshape)(reshape_array, out_shape) for reshape_array in reshape_arrays.values())
+    print('Finished downloading. Will reshape in parallel...')
+    
+    reshaped_arrays = Parallel(n_jobs, backend='threading')(delayed(reshape)(reshape_array, out_shape) for reshape_array in reshape_arrays.values())
     for band, reshaped in zip(reshape_arrays.keys(), reshaped_arrays):
         print(f'resampling {band} to {out_shape}')
         datasets[band] = reshaped
@@ -539,14 +544,10 @@ class WaterDetect:
 
         plot_data = np.concatenate([x_data, y_data, label_data], axis=1)
 
-        # get a small random sample (not too small)
-        plot_idxs = np.random.randint(len(plot_data), size=self.sampling)
-        plot_data = plot_data[plot_idxs, :]
-
         # slice for valid_data only
         invalid = plot_data[:, -1] == -1
         plot_data = plot_data[~invalid]
-
+        
         # get a small random sample
         plot_idxs = np.random.randint(len(plot_data), size=samples)
         plot_data = plot_data[plot_idxs, :]

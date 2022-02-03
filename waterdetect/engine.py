@@ -25,7 +25,7 @@ from geeS2downloader import GEES2Downloader
 from concurrent.futures import ThreadPoolExecutor
 
 
-def search_tiles(tile, date_range):
+def search_tiles(tile, date_range, reverse=False):
     '''Return a list of PYSTAC Items corresponding to the tile (without T) and the date_range specified'''
     
     # Create the query
@@ -37,8 +37,9 @@ def search_tiles(tile, date_range):
     
     catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
     search = catalog.search(collections=["sentinel-2-l2a"], query=query, datetime=date_range)
+    tiles = search.get_all_items().items
     
-    return search.get_all_items().items
+    return sorted(tiles, key=lambda x: x.datetime, reverse=reverse)
     
 
 def search_img(coords, date):

@@ -52,6 +52,8 @@ def plot_stac_asset(asset, ax=None, **kwargs):
     Kwargs will be passed to imshow
     """
     
+    plt.style.use('default')
+
     if ax is None:
         _, ax = plt.subplots(**kwargs)
     
@@ -70,6 +72,9 @@ def plot_stac_asset(asset, ax=None, **kwargs):
 
 
 def plot_previews(items, asset='preview', cols=3, base_size=5):
+    
+    plt.style.use('default')
+
     # number of items
     n = len(items)
     
@@ -96,6 +101,8 @@ def plot_previews(items, asset='preview', cols=3, base_size=5):
     
 def plot_stac_items(items, asset_name, cols=3, base_size=5):
     
+    plt.style.use('default')
+
     # number of items
     n = len(items)
     

@@ -115,7 +115,6 @@ class DWGlintProcessor:
 
         return final_matrix
 
-
     def create_glint_heatmap(self, img_dataset, brightness=5., ax=None):
         """Create a heatmap with the RGB obtained from the image dataset"""
         
@@ -144,9 +143,11 @@ class DWGlintProcessor:
         # multiplier range
         multiplier_range = max_multiplier - min_multiplier
         
-        multiplier = np.where(self.glint_array > self.limit_angle, 
-                              0, 
-                              (self.glint_array - self.limit_angle) / angle_range * multiplier_range + min_multiplier)
+        multiplier = np.where(
+            self.glint_array > self.limit_angle, 
+            1., 
+            (self.glint_array - self.limit_angle) / angle_range * multiplier_range + min_multiplier)
+
         return multiplier
 
     def show_multiplication_coefs(self):

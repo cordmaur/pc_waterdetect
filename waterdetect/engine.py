@@ -2,8 +2,6 @@ import planetary_computer as pc
 import rasterio as rio
 import rioxarray as xrio
 import xarray as xr
-from geojson import Point
-from pystac_client import Client
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -18,44 +16,13 @@ from joblib import Parallel, delayed
 from functools import partial
 import matplotlib.pyplot as plt
 
+# PACKAGE IMPORTS
 from .cloudless import get_gee_img, create_cloud_mask
 from .glint import DWGlintProcessor
 from geeS2downloader import GEES2Downloader
 
 from concurrent.futures import ThreadPoolExecutor
 
-
-def search_tiles(tile, date_range, reverse=False):
-    '''Return a list of PYSTAC Items corresponding to the tile (without T) and the date_range specified'''
-    
-    # Create the query
-    query = {
-        "s2:mgrs_tile": {
-          "eq": tile
-        },
-      }
-    
-    catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
-    search = catalog.search(collections=["sentinel-2-l2a"], query=query, datetime=date_range)
-    tiles = search.get_all_items().items
-    
-    return sorted(tiles, key=lambda x: x.datetime, reverse=reverse)
-    
-
-def search_img(coords, date):
-    '''Return the image(s) in a coordinate (lon, lat) in a specific date'''
-
-    # Open Sentinel 2 Catalog
-    catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
-
-    # Create a point GeoJson with the coords and perform a search
-    pt = Point(coords)
-    search = catalog.search(collections=["sentinel-2-l2a"], 
-                        datetime=date,
-                        intersects=pt)
-    
-    # return the items
-    return search.get_all_items().items
 
 
 def reshape(array, out_shape):
@@ -250,6 +217,7 @@ def generalize(train_data, train_labels, all_data, train_bands):
     
     return labels
 
+
 # ********************************************************************************************
 class WaterDetect:
     load_bands = ['B02', 'B03', 'B04', 'B11', 'B12', 'B08', 'SCL']
@@ -267,34 +235,66 @@ class WaterDetect:
         # 1- create the cloudmask and download it from GEE
         # 2- Load and resample the bands from PC
         
-        if s2clouds:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                load_clouds = executor.submit(self.get_s2cloudmask)
-                load_dataset = executor.submit(open_image, image=img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs//2)
-                glint_proc = executor.submit(DWGlintProcessor, img_item=img_item)
+        # if s2clouds:
+        #     with ThreadPoolExecutor(max_workers=2) as executor:
+        #         load_clouds = executor.submit(self.get_s2cloudmask)
+        #         load_dataset = executor.submit(open_image, image=img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs//2)
+        #         glint_proc = executor.submit(DWGlintProcessor, img_item=img_item)
 
-            # if the threads finished correctly
-            if load_clouds.done() & load_dataset.done() & glint_proc.done():
-                self.glint_proc = glint_proc.result()                
-                self.img = load_dataset.result()
+        #     # if the threads finished correctly
+        #     if load_clouds.done() & load_dataset.done() & glint_proc.done():
+        #         self.glint_proc = glint_proc.result()                
+        #         self.img = load_dataset.result()
+        #         clouds_array = load_clouds.result()
+                
+        #         # georreference the output array
+        #         geoarray = WaterDetect.georeference_array(dataset=self.img, 
+        #                                                   array=clouds_array, 
+        #                                                   name='s2cloudmask', 
+        #                                                   dtype='bool')
+
+        #         # append it to the images dataset
+        #         self.img = self.img.assign({'s2cloudmask': geoarray})
+
+        #     else:
+        #         raise Exception("Datasets not loaded correctly")
+
+        # else:
+        #     # open the image directly with 4 jobs
+        #     self.img = open_image(img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs)
+        
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Just launch s2clouds if demanded
+            load_clouds = executor.submit(self.get_s2cloudmask) if s2clouds else None
+
+            # open image and GLINT processor will be launched anyways
+            load_dataset = executor.submit(open_image, image=img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs//2)
+            glint_proc = executor.submit(DWGlintProcessor, img_item=img_item)
+
+        # if the threads finished correctly
+        if load_dataset.done() and glint_proc.done():
+            self.glint_proc = glint_proc.result()                
+            self.img = load_dataset.result()
+        else:
+            raise Exception("Datasets not loaded correctly")
+
+        # check for the s2clouds from GEE
+        if s2clouds:
+            if load_clouds.done():
                 clouds_array = load_clouds.result()
                 
                 # georreference the output array
                 geoarray = WaterDetect.georeference_array(dataset=self.img, 
-                                                          array=clouds_array, 
-                                                          name='s2cloudmask', 
-                                                          dtype='bool')
+                                                            array=clouds_array, 
+                                                            name='s2cloudmask', 
+                                                            dtype='bool')
 
                 # append it to the images dataset
                 self.img = self.img.assign({'s2cloudmask': geoarray})
-
+                
             else:
-                raise Exception("Datasets not loaded correctly")
+                raise Exception("S2Clouds not loaded correctly, but needed")
 
-        else:
-            # open the image directly with 4 jobs
-            self.img = open_image(img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs)
-        
         # Init variables
         self.cluster_bands = cluster_bands
         self.sampling = sampling

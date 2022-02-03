@@ -529,8 +529,9 @@ class WaterDetect:
             
             # release all the memory
             fig.clear()
-            ax.clear()
             plt.close('all')
+            del ax
+            del fig
             
     # ----------------------------------------------------------------------------------
     # ############################### GRAPH FUNCTIONS ###############################

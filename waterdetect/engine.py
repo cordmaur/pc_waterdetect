@@ -526,7 +526,11 @@ class WaterDetect:
         # if a save folder is given, save it there
         if save_folder is not None:
             fig.savefig(Path(save_folder)/f'{self.img_item.id[:38]}_thumbs.png', dpi=300)
-            plt.close()
+            
+            # release all the memory
+            fig.clear()
+            ax.clear()
+            plt.close('all')
             
     # ----------------------------------------------------------------------------------
     # ############################### GRAPH FUNCTIONS ###############################
@@ -609,8 +613,12 @@ class WaterDetect:
                                     )
    
         if save_folder is not None:
-            fig.savefig(Path(save_folder)/f'{self.img_item.id[:38]}_Graphs.png', dpi=150)    
-            plt.close()
+            fig.savefig(Path(save_folder)/f'{self.img_item.id[:38]}_Graphs.png', dpi=150)
+            fig.clear()
+            plt.close('all')
+            del ax
+            del fig
+
             
     # ----------------------------------------------------------------------------------
     # ############################### DUNDER FUNCTIONS ###############################

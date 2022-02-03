@@ -291,7 +291,7 @@ class WaterDetect:
 
                 # append it to the images dataset
                 self.img = self.img.assign({'s2cloudmask': geoarray})
-                
+
             else:
                 raise Exception("S2Clouds not loaded correctly, but needed")
 
@@ -612,6 +612,8 @@ class WaterDetect:
             fig.savefig(Path(save_folder)/f'{self.img_item.id[:38]}_Graphs.png', dpi=150)    
             plt.close()
             
+    # ----------------------------------------------------------------------------------
+    # ############################### DUNDER FUNCTIONS ###############################
     def __repr__(self):
         s = f'*** {type(self).__name__} class *** \n'
         s += f'Img loaded with following bands: {self.img.data_vars}\n'
@@ -620,5 +622,9 @@ class WaterDetect:
         else:
             s += 'Water mask processed. Access .water_mask or .cluster_matrix for results.'
         return s
+
+    def __del__(self):
+        self.img.close()
+        del self.img
     
     # https://pccompute.westeurope.cloudapp.azure.com/compute/user/mauricio@ana.gov.br/?token=1d066f20062247ae9ec3684f5ea68def

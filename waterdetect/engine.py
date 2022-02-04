@@ -29,7 +29,7 @@ def reshape(array, out_shape):
     return array.rio.reproject(array.rio.crs, shape=out_shape, resampling=rio.enums.Resampling.nearest)
 
 
-def open_image(image, bands, out_shape=(10980, 10980), n_jobs=4, retries=3):
+def open_image(image, bands, out_shape=(10980, 10980), n_jobs=2, retries=3):
     '''Open bands of an image and output them as a cube XArray with the desired out_shape'''
     
     print(f'Getting image: {image.id}')
@@ -123,10 +123,10 @@ def clusterize(data, k, ret='metric'):
         return (labels, metric)
         
         
-def find_best_k(data, cluster_bands, min_k=2, max_k=7):
+def find_best_k(data, cluster_bands, min_k=2, max_k=7, n_jobs=1):
     train_data = data.sel(band=cluster_bands)
     
-    metrics = Parallel(n_jobs=4)(delayed(clusterize)(train_data, k) for k in range(min_k, max_k+1))
+    metrics = Parallel(n_jobs=n_jobs)(delayed(clusterize)(train_data, k) for k in range(min_k, max_k+1))
 
     for k, metric in enumerate(metrics):
         print(f'k={k+min_k} - Calinski={metric}')
@@ -230,45 +230,13 @@ class WaterDetect:
     def __init__(self, img_item, cluster_bands, s2clouds=False, sampling=10000, out_shape=(10980, 10980), max_k=7, n_jobs=4):
         
         self.img_item = img_item
-        
-        # For performance purposes, if s2clouds is ON, we will start 2 threads separatelly:
-        # 1- create the cloudmask and download it from GEE
-        # 2- Load and resample the bands from PC
-        
-        # if s2clouds:
-        #     with ThreadPoolExecutor(max_workers=2) as executor:
-        #         load_clouds = executor.submit(self.get_s2cloudmask)
-        #         load_dataset = executor.submit(open_image, image=img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs//2)
-        #         glint_proc = executor.submit(DWGlintProcessor, img_item=img_item)
 
-        #     # if the threads finished correctly
-        #     if load_clouds.done() & load_dataset.done() & glint_proc.done():
-        #         self.glint_proc = glint_proc.result()                
-        #         self.img = load_dataset.result()
-        #         clouds_array = load_clouds.result()
-                
-        #         # georreference the output array
-        #         geoarray = WaterDetect.georeference_array(dataset=self.img, 
-        #                                                   array=clouds_array, 
-        #                                                   name='s2cloudmask', 
-        #                                                   dtype='bool')
-
-        #         # append it to the images dataset
-        #         self.img = self.img.assign({'s2cloudmask': geoarray})
-
-        #     else:
-        #         raise Exception("Datasets not loaded correctly")
-
-        # else:
-        #     # open the image directly with 4 jobs
-        #     self.img = open_image(img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs)
-        
         with ThreadPoolExecutor(max_workers=2) as executor:
             # Just launch s2clouds if demanded
             load_clouds = executor.submit(self.get_s2cloudmask) if s2clouds else None
 
             # open image and GLINT processor will be launched anyways
-            load_dataset = executor.submit(open_image, image=img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=n_jobs//2)
+            load_dataset = executor.submit(open_image, image=img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=2)
             glint_proc = executor.submit(DWGlintProcessor, img_item=img_item)
 
         # if the threads finished correctly
@@ -399,7 +367,7 @@ class WaterDetect:
         train_data = columns[train_idxs, :]
 
         # then, search the best K
-        k = find_best_k(train_data, self.cluster_bands, min_k=2, max_k=self.max_k)
+        k = find_best_k(train_data, self.cluster_bands, min_k=2, max_k=self.max_k, n_jobs=self.n_jobs)
         
         # get the training labels and write it to the training data
         print(f'Final clustering with k={k}')
@@ -418,7 +386,7 @@ class WaterDetect:
         
         # recreate the final matrices
         # First the matrix with the clusters
-        cluster_matrix = xr.DataArray(np.zeros(self.out_shape), dims=['y', 'x']).astype('int8') - 1
+        cluster_matrix = xr.DataArray(np.zeros(self.out_shape, dtype='uint8'), dims=['y', 'x']) - 1
         cluster_matrix.values[~self.img['mask']] = labels
         
         # then, the final water mask
@@ -447,8 +415,6 @@ class WaterDetect:
     def title(self):
         return self.img_item.id[:38]
         
-
-                       
     # ----------------------------------------------------------------------------------
     # ############################### IO FUNCTIONS ###############################
     def save_geotiff(self, band, filename):
@@ -456,7 +422,6 @@ class WaterDetect:
         xarr = self.img[band]
         xarr.rio.to_raster(filename, compress='PACKBITS')
         
-
     # ----------------------------------------------------------------------------------
     # ############################### PLOTTING FUNCTIONS ###############################
     def get_thumbnail(self, band, scale=1):
@@ -570,7 +535,7 @@ class WaterDetect:
         y_data = self.img[y].values.reshape(-1, 1)
         label_data = labels.values.reshape(-1, 1)
 
-        plot_data = np.concatenate([x_data, y_data, label_data], axis=1)
+        plot_data = np.concatenate([x_data, y_data, label_data], dtype='float32', axis=1)
 
         # slice for valid_data only
         invalid = plot_data[:, -1] == -1
@@ -620,7 +585,6 @@ class WaterDetect:
             del ax
             del fig
 
-            
     # ----------------------------------------------------------------------------------
     # ############################### DUNDER FUNCTIONS ###############################
     def __repr__(self):

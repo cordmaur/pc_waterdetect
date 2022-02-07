@@ -239,29 +239,22 @@ class WaterDetect:
             load_dataset = executor.submit(open_image, image=img_item, out_shape=out_shape, bands=WaterDetect.load_bands, n_jobs=2)
             glint_proc = executor.submit(DWGlintProcessor, img_item=img_item)
 
-        # if the threads finished correctly
-        if load_dataset.done() and glint_proc.done():
-            self.glint_proc = glint_proc.result()                
-            self.img = load_dataset.result()
-        else:
-            raise Exception("Datasets not loaded correctly")
+        # The pool will exit the context if everything has finished
+        self.glint_proc = glint_proc.result()                
+        self.img = load_dataset.result()
 
         # check for the s2clouds from GEE
-        if s2clouds:
-            if load_clouds.done():
-                clouds_array = load_clouds.result()
-                
-                # georreference the output array
-                geoarray = WaterDetect.georeference_array(dataset=self.img, 
-                                                            array=clouds_array, 
-                                                            name='s2cloudmask', 
-                                                            dtype='bool')
+        clouds_array = load_clouds.result() if s2clouds else None
+        
+        if clouds_array is not None:
+            # georreference the output array
+            geoarray = WaterDetect.georeference_array(dataset=self.img, 
+                                                        array=clouds_array, 
+                                                        name='s2cloudmask', 
+                                                        dtype='bool')
 
-                # append it to the images dataset
-                self.img = self.img.assign({'s2cloudmask': geoarray})
-
-            else:
-                raise Exception("S2Clouds not loaded correctly, but needed")
+            # append it to the images dataset
+            self.img = self.img.assign({'s2cloudmask': geoarray})
 
         # Init variables
         self.cluster_bands = cluster_bands
@@ -288,7 +281,8 @@ class WaterDetect:
         coords_x, coords_y = rio.transform.xy(transform, rows=range(array.shape[0]), cols=range(array.shape[1]))
 
         # create the DataArray using the coordinates
-        geoarray = xr.DataArray(array, dims=['y', 'x'], coords={'x': coords_x, 'y': coords_y}, name=name)
+        dtype = 'uint8' if dtype == 'bool' else dtype
+        geoarray = xr.DataArray(array.astype(dtype), dims=['y', 'x'], coords={'x': coords_x, 'y': coords_y}, name=name)
 
         # write crs to the DataArray
         geoarray = geoarray.rio.write_crs(dataset.rio.crs)
@@ -298,7 +292,7 @@ class WaterDetect:
                                           resampling=rio.enums.Resampling.nearest)
 
         # append to the dataset
-        return geoarray.rename(name).astype(dtype)        
+        return geoarray.rename(name)
         
     def get_s2cloudmask(self):
         """Use GEE API to download and preprocess the clouds and shadows using S2 Cloud Probability"""
@@ -309,15 +303,20 @@ class WaterDetect:
         gee_img = get_gee_img(self.img_item, 'COPERNICUS/S2_SR')
         s2cloud = get_gee_img(self.img_item, 'COPERNICUS/S2_CLOUD_PROBABILITY')
 
-        # create the cloud/shadow mask on the GEE environment
-        mask = create_cloud_mask(gee_img, s2cloud, cloud_thresh=50)
+        if gee_img is not None and s2cloud is not None:
+            # create the cloud/shadow mask on the GEE environment
+            mask = create_cloud_mask(gee_img, s2cloud, cloud_thresh=50)
+
+            # Once finished, load it in memory using geeS2Downloader
+            downloader = GEES2Downloader()
+            downloader.download(mask, band='cloudmask')
+            mask_array = downloader.array.astype('uint8')
+
+            return mask_array
         
-        # Once finished, load it in memory using geeS2Downloader
-        downloader = GEES2Downloader()
-        downloader.download(mask, band='cloudmask')
-        mask_array = downloader.array.astype('uint8')
-  
-        return mask_array
+        else:
+            print(f'Problem to find clouds for {self.img_item.id}. Proceeding with SEN2COR clouds')
+            return None
 
     def _calc_indices(self, index_name):
         if index_name == 'mndwi':

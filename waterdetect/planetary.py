@@ -4,13 +4,14 @@ from math import ceil
 import rioxarray as xrio
 from pathlib import Path
 import planetary_computer as pc
+import numpy as np
 
 import matplotlib.pyplot as plt
 
 # ----------------------------------------------------------------
 # ************** SEARCH FUNCTIONS ********************
 # ----------------------------------------------------------------
-def search_tiles(tile, date_range, reverse=False):
+def search_tiles(tile, date_range, max_clouds=90, reverse=False):
     '''Return a list of PYSTAC Items corresponding to the tile (without T) and the date_range specified'''
     
     # Create the query
@@ -18,6 +19,9 @@ def search_tiles(tile, date_range, reverse=False):
         "s2:mgrs_tile": {
           "eq": tile
         },
+        "eo:cloud_cover": {
+            "lt": max_clouds
+        }
       }
     
     catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
@@ -84,7 +88,8 @@ def plot_previews(items, asset='preview', cols=3, base_size=5):
     
     # iterate through the items to display them in lower resolution
     for i, item in enumerate(items):
-        ax = axs.reshape(-1)[i] if n > 1 else axs
+        
+        ax = axs.reshape(-1)[i] if isinstance(axs, np.ndarray) else axs
 
         # get the signed href
         signed_href = pc.sign(item.assets[asset].href)
@@ -112,7 +117,9 @@ def plot_stac_items(items, asset_name, cols=3, base_size=5):
     
     # iterate through the items to display them in lower resolution
     for i, item in enumerate(items):
-        ax = axs.reshape(-1)[i]
+        
+        ax = axs.reshape(-1)[i] if isinstance(axs, np.ndarray) else axs
+
         plot_stac_asset(item.assets[asset_name], ax)
         
         # array = xrio.open_rasterio(item.assets[asset_name].href, masked=True).squeeze()

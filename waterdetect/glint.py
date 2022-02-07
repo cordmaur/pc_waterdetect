@@ -93,7 +93,7 @@ class DWGlintProcessor:
         for i in range(0, hm.shape[0]):
             for j in range(0, hm.shape[1]):
                 text = ax.text(j, i, round(hm[i, j], 1),
-                               ha="center", va="center", color="cornflowerblue", size=9)
+                               ha="center", va="center", color="cornflowerblue", size=5)
 
     @staticmethod
     def nn_interpolate(arr, new_size):

@@ -2,7 +2,7 @@ import gc
 import logging
 from pathlib import Path
 import profile
-from memory_profiler import profile
+# from memory_profiler import profile
 
 from .planetary import search_tiles
 from .engine import WaterDetect
@@ -12,7 +12,7 @@ from .cloudless import get_gee_img
 def create_logger(tile):
     # Create a logger for the tile
     logger = logging.getLogger('automation')
-    handler = logging.FileHandler(f'./tmp/log_{tile}.txt', mode='a+')
+    handler = logging.FileHandler(f'./tmp/log_{tile}.txt', mode='w')
     handler.setFormatter(logging.Formatter("%(asctime)-15s %(levelname)-8s %(message)s"))
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)    
@@ -66,6 +66,18 @@ def process_img(img, out_folder, cluster_bands, logger, n_jobs=4, retries=3):
         # And collect the garbage
         gc.collect()
         
+def output_exists(img_id, out_path):
+    """
+    Check if the item exists in the output path.
+    """
+    out_path = Path(out_path)
+
+    target_tif = out_path/(img_id[:38] + '_watermask.tif')
+    target_thumbs = out_path/(img_id[:38] + '_thumbs.png')
+    target_graphs = out_path/(img_id[:38] + '_Graphs.png')
+
+    return target_tif.exists() and target_thumbs.exists() and target_graphs.exists()
+
 
 def process_period(tile, period, output_folder, cluster_bands):
     
@@ -77,10 +89,17 @@ def process_period(tile, period, output_folder, cluster_bands):
     imgs = search_tiles(tile, period, reverse=False)
     
     logger = create_logger(tile)
+    logger.setLevel(logging.INFO)
     
     for img in imgs:
-        process_img(img, out_path, cluster_bands, logger)
+        # Just process the image if it does not exists
+        if not output_exists(img.id, out_path):
+            process_img(img, out_path, cluster_bands, logger)
 
+        else:
+            logger.setLevel(logging.INFO)
+            logger.info('*'*50)
+            logger.info(f'Skipping already processed tile: id= {img}')
 
 # This function has been created exclusively for profiling the memory 
 # @profile(stream=fp)

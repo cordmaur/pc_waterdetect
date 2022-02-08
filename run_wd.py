@@ -2,9 +2,9 @@ import ee
 from waterdetect.automation import process_period, test_memory
 import argparse
 
-import os
-os.environ['PROJ_LIB'] = r'D:\Programs\miniconda3\envs\rasterio\Library\share\proj'
-os.environ['GDAL_DATA'] = r'D:\Programs\miniconda3\envs\rasterio\Library\share'
+# import os
+# os.environ['PROJ_LIB'] = r'D:\Programs\miniconda3\envs\rasterio\Library\share\proj'
+# os.environ['GDAL_DATA'] = r'D:\Programs\miniconda3\envs\rasterio\Library\share'
 
 def main(tile=None, period=None, mt=False):
     """

@@ -481,7 +481,14 @@ class WaterDetect:
         base_width = 15
         base_height = base_width / cols
 
-        fig, ax = plt.subplots(nrows=rows, ncols=cols, figsize=(base_width, base_height*rows))
+        fig, ax = plt.subplots(
+            nrows=rows, 
+            ncols=cols, 
+            figsize=(base_width, base_height*rows), 
+            num=1, 
+            clear=True
+        )
+
         fig.suptitle = self.img_item.id
 
         for i, thumb in enumerate(thumbs):
@@ -492,10 +499,10 @@ class WaterDetect:
             fig.savefig(Path(save_folder)/f'{self.img_item.id[:38]}_thumbs.png', dpi=300)
             
             # release all the memory
-            fig.clear()
-            plt.close('all')
-            del ax
-            del fig
+            # fig.clear()
+            # plt.close('all')
+            # del ax
+            # del fig
             
     # ----------------------------------------------------------------------------------
     # ############################### GRAPH FUNCTIONS ###############################
@@ -560,7 +567,14 @@ class WaterDetect:
 
         # create the area for the graphs
         rows = len(axes)//cols + (0 if len(axes) % cols == 0 else 1)
-        fig, ax = plt.subplots(nrows=rows, ncols=cols, figsize=(size*cols*1.2, size*rows))
+        fig, ax = plt.subplots(
+            nrows=rows, 
+            ncols=cols, 
+            figsize=(size*cols*1.2, size*rows),
+            num=1,
+            clear=True
+        )
+
         fig.suptitle = self.img_item.id
         
         for i, graph in enumerate(axes):
@@ -579,10 +593,10 @@ class WaterDetect:
    
         if save_folder is not None:
             fig.savefig(Path(save_folder)/f'{self.img_item.id[:38]}_Graphs.png', dpi=150)
-            fig.clear()
-            plt.close('all')
-            del ax
-            del fig
+            # fig.clear()
+            # plt.close('all')
+            # del ax
+            # del fig
 
     # ----------------------------------------------------------------------------------
     # ############################### DUNDER FUNCTIONS ###############################

@@ -61,9 +61,13 @@ def plot_stac_asset(asset, ax=None, **kwargs):
     if ax is None:
         _, ax = plt.subplots(**kwargs)
     
-    href = Path(asset.href)
+
+    suffix = asset.href.split('.')[-1]
+    href = pc.sign(asset.href)
     
-    if href.suffix == '.tif':
+    print(href)
+
+    if suffix == '.tif':
         # open the item and downscale by 10x 
         array = xrio.open_rasterio(href, masked=True).squeeze()[::10, ::10]
         

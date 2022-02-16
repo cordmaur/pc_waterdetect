@@ -147,8 +147,10 @@ def calc_clusters_params(data, labels):
         std = pd.Series(cluster.std(dim='data'), index=cluster.band, name=('std', label))
         count = pd.Series(cluster.count(dim='data'), index=cluster.band, name=('count', label))
         
-        df = df.append([mean, std, count])
+        df = pd.concat([df, mean, std, count], axis=1)
 
+    df = df.T
+    df.index = pd.MultiIndex.from_tuples(df.index)
     return df
 
 
@@ -352,12 +354,28 @@ class WaterDetect:
                                     'mbwi': indices[2],
                                     'mask': indices[3],
                                    })       
-        
-    def run_detect_water(self, cluster_bands=None):
-        
+    
+    def get_balanced_train_data(self, columns, min_mndwi=0.1, water_percent=0.1):
+
+        # get the subsets
+        water_data = columns.where(columns.sel(band='mndwi') >= min_mndwi).dropna(dim='data', how='all')
+        other_data = columns.where(columns.sel(band='mndwi') < min_mndwi).dropna(dim='data', how='all')   
+
+        water_train_idx = np.random.randint(len(water_data), size=int(water_percent*self.sampling))
+        water_train_data = water_data[water_train_idx]
+
+        other_train_idx = np.random.randint(len(other_data), size=int((1-water_percent)*self.sampling))
+        other_train_data = other_data[other_train_idx]
+
+        train_data = xr.concat([water_train_data, other_train_data], dim='data')
+
+        return train_data
+
+    def run_detect_water(self, cluster_bands=None, retries=2):
+
         # override with the new cluster_bands (the bands must be loaded previously)
         self.cluster_bands = cluster_bands if cluster_bands is not None else self.cluster_bands
-        
+
         # first, let's convert all data to columns
         columns = bands_to_columns(self.img, self.img['mask'])
 
@@ -365,31 +383,56 @@ class WaterDetect:
         train_idxs = np.random.randint(len(columns), size=self.sampling)
         train_data = columns[train_idxs, :]
 
-        # then, search the best K
-        k = find_best_k(train_data, self.cluster_bands, min_k=2, max_k=self.max_k, n_jobs=self.n_jobs)
-        
-        # get the training labels and write it to the training data
-        print(f'Final clustering with k={k}')
-        train_labels = clusterize(train_data.sel(band=self.cluster_bands), k, ret='labels')
+        while retries > 0:
+            try:
+                train_labels = self._detect_water_cluster(columns, train_data)
 
-        # calc parameters for each trained cluster
-        self.cluster_params = calc_clusters_params(train_data, train_labels)
-        
-        # identify the water_cluster
-        self.water_cluster = itendify_water_cluster(self.cluster_params, band='mbwi', rule='max')
-        print(f'Water cluster = {self.water_cluster}')
-        
+                if not self.valid_water_cluster:
+                    raise Exception(f'Water cluster B12 centroid above max threshold')
+
+                # if everything goes fine, apply solution and quit
+                # self._apply_clustering(columns, train_data, train_labels)
+                break
+
+            except Exception as e:
+                print(f'**Problem processing {self.img_item.id}')
+                print(e)
+                retries -= 1
+
+        # After the retries, check again for the validity
+        if not self.valid_water_cluster:
+            for min_mndwi in range(0, 25, 5):
+                print(f'Trying balanced sampling with min_mndwi={min_mndwi/100}')
+                train_data = self.get_balanced_train_data(columns, min_mndwi=min_mndwi/100)
+                train_labels = self._detect_water_cluster(columns, train_data)
+
+                if self.valid_water_cluster:
+                    print(f'Solved scene with previous config.')
+                    break
+
+        if self.valid_water_cluster:
+            self._apply_clustering(columns, train_data, train_labels)
+
+        else:
+            print('It was not possible to process the scene!!!!')
+
+        # try to free some memory
+        for temp in [columns, train_idxs, train_data, train_labels]:
+            del temp
+
+    def _apply_clustering(self, columns, train_data, train_labels):
         # generalize the labels for the entire the image and write it to the columns
         labels = generalize(train_data, train_labels, columns, train_bands=self.cluster_bands)
         print(f'Generalized for the whole scene')
-        
+
         # recreate the final matrices
         # First the matrix with the clusters
-        cluster_matrix = xr.DataArray(np.zeros(self.out_shape, dtype='uint8'), dims=['y', 'x']) - 1
+        cluster_matrix = xr.DataArray(np.zeros(self.out_shape, dtype='int8'), dims=['y', 'x']) - 1
         cluster_matrix.values[~self.img['mask']] = labels
         
         # then, the final water mask
         water_mask = cluster_matrix == self.water_cluster
+
         # clipping for high SWIR and eroding single pixels
         b12_threshold = self.glint_proc.glint_adjusted_threshold(value=0.1,
                                                                  out_shape=self.out_shape,
@@ -405,15 +448,34 @@ class WaterDetect:
         
         # append the final solution
         self.img = self.img.assign({'watermask': water_mask, 'clusters': cluster_matrix, 'nodata_watermask': nodata_watermask})
+
+    def _detect_water_cluster(self, columns, train_data):
         
-        # try to free some memory
-        for temp in [columns, train_idxs, train_data, cluster_matrix, water_mask, nodata_watermask, b12_threshold]:
-            del temp
-                 
+        # then, search the best K
+        k = find_best_k(train_data, self.cluster_bands, min_k=2, max_k=self.max_k, n_jobs=self.n_jobs)
+        
+        # get the training labels and write it to the training data
+        print(f'Final clustering with k={k}')
+        train_labels = clusterize(train_data.sel(band=self.cluster_bands), k, ret='labels')
+
+        # calc parameters for each trained cluster
+        self.cluster_params = calc_clusters_params(train_data, train_labels)
+        
+        # identify the water_cluster
+        self.water_cluster = itendify_water_cluster(self.cluster_params, band='mbwi', rule='max')
+        print(f'Water cluster = {self.water_cluster}')
+        
+        return train_labels
+
     @property
     def title(self):
         return self.img_item.id[:38]
         
+    @property
+    def valid_water_cluster(self):
+        # Check if the water cluster is valid (B12 centroid bellow 0.2 (max thresh))
+        return self.cluster_params.loc[('mean', self.water_cluster), 'B12'] < 0.2
+
     # ----------------------------------------------------------------------------------
     # ############################### IO FUNCTIONS ###############################
     def save_geotiff(self, band, filename):
@@ -537,19 +599,44 @@ class WaterDetect:
         ax.legend(handles, labels)
 
     def get_plot_data(self, x, y, labels, samples=500):
-        x_data = self.img[x].values.reshape(-1, 1)
-        y_data = self.img[y].values.reshape(-1, 1)
-        label_data = labels.values.reshape(-1, 1)
+        # x_data = self.img[x].values.reshape(-1, 1)
+        # y_data = self.img[y].values.reshape(-1, 1)
+        # label_data = self.img[labels].values.reshape(-1, 1)
 
-        plot_data = np.concatenate([x_data, y_data, label_data], dtype='float32', axis=1)
+        # plot_data = np.concatenate([x_data, y_data, label_data], dtype='float32', axis=1)
 
-        # slice for valid_data only
-        invalid = plot_data[:, -1] == -1
-        plot_data = plot_data[~invalid]
+        # # slice for valid_data only
+        # invalid = plot_data[:, -1] == -1
+        # plot_data = plot_data[~invalid]
         
-        # get a small random sample
-        plot_idxs = np.random.randint(len(plot_data), size=samples)
-        plot_data = plot_data[plot_idxs, :]
+        # # get some water pts (5%) at least
+        # water_data = plot_data[plot_data[:, 2]==self.water_cluster]
+        # water_idxs = np.random.randint(len(water_data), size=int(0.05*samples))
+        # water_data = water_data[water_idxs]
+
+        # # get a small random sample
+        # no_water_data = plot_data[plot_data[:, 2]!=self.water_cluster]
+        # no_water_idxs = np.random.randint(len(no_water_data), size=int(0.95*samples))
+        # no_water_data = no_water_data[no_water_idxs]
+
+        # plot_data = np.concatenate([water_data, no_water_data], axis=0)
+
+        # create an array with the necessary data and mask it
+        data = self.img[[x, y, labels]].to_array()
+        data = data.where(~self.img['mask'], other=np.nan)
+
+        # get some water pts (5%)
+        water_data = data.where(self.img['watermask'] == 1, other=np.nan).to_numpy().reshape(3, -1).transpose(1, 0)
+        water_data = water_data[~np.isnan(water_data).all(axis=1)]
+        water_idxs = water_idxs = np.random.randint(len(water_data), size=int(0.05*samples))
+        water_data = water_data[water_idxs]
+
+        no_water_data = data.where(self.img[labels] != self.water_cluster, other=np.nan).to_numpy().reshape(3, -1).transpose(1, 0)
+        no_water_data = no_water_data[~np.isnan(no_water_data).all(axis=1)]
+        no_water_idxs = np.random.randint(len(no_water_data), size=int(0.95*samples))
+        no_water_data = no_water_data[no_water_idxs]
+
+        plot_data = np.concatenate([water_data, no_water_data], axis=0)
 
         return plot_data    
   
@@ -578,7 +665,7 @@ class WaterDetect:
         fig.suptitle = self.img_item.id
         
         for i, graph in enumerate(axes):
-            plot_data = self.get_plot_data(graph[0], graph[1], self.img['clusters'])
+            plot_data = self.get_plot_data(graph[0], graph[1], 'clusters')
 
             graph_options = {'x_label': graph[0],
                              'y_label': graph[1]}

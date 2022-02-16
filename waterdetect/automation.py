@@ -25,16 +25,21 @@ def process_img(img, out_folder, cluster_bands, logger, n_jobs=4, retries=3):
     Fully waterdetect one img (stac item) and save the outputs to the out_folder.
     If something goes wrong in the meantime, it will retry the execution.
     """
-    
+    out_folder = Path(out_folder)
+
     logger.setLevel(logging.INFO)
     logger.info('*'*50)
     logger.info(f'Processing tile {img}')
     
     while retries > 0:
         try:
-            wd = WaterDetect(img, cluster_bands, s2clouds=True, n_jobs=n_jobs)
+            wd = WaterDetect(img, cluster_bands, max_k=5, s2clouds=True, n_jobs=n_jobs)
             wd.run_detect_water()
 
+            if not wd.valid_water_cluster:
+                retries = 0
+                raise Exception('No valid cluster found')
+            
             # save thumbnails
             wd.plot_thumbs(cols=3, thumbs=['rgb', 'watermask', 'mndwi', 'mask', 'glint', 'ndwi'],  save_folder=out_folder)
 
@@ -51,9 +56,6 @@ def process_img(img, out_folder, cluster_bands, logger, n_jobs=4, retries=3):
         except Exception as e:
             
             logger.error(f'Exception {e} when processing img {img}')
-            logger.error(f'Releasing memory')
-            
-            
             retries -= 1
             logger.error(f'There are {retries} retries left!')
 

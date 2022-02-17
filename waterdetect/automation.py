@@ -56,8 +56,8 @@ def process_img(img, out_folder, cluster_bands, logger, n_jobs=4, retries=3):
         except Exception as e:
             
             logger.error(f'Exception {e} when processing img {img}')
-            retries -= 1
             logger.error(f'There are {retries} retries left!')
+            retries -= 1
 
         # Regardless the result of the processing, will release the memory by killing wd
         try:

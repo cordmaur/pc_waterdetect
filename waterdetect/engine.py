@@ -401,7 +401,7 @@ class WaterDetect:
 
         # After the retries, check again for the validity
         if not self.valid_water_cluster:
-            for min_mndwi in range(0, 25, 5):
+            for min_mndwi in range(0, 40, 5):
                 print(f'Trying balanced sampling with min_mndwi={min_mndwi/100}')
                 train_data = self.get_balanced_train_data(columns, min_mndwi=min_mndwi/100)
                 train_labels = self._detect_water_cluster(columns, train_data)

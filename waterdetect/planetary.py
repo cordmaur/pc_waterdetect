@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 # ----------------------------------------------------------------
 # ************** SEARCH FUNCTIONS ********************
 # ----------------------------------------------------------------
-def search_tiles(tile, date_range, max_clouds=90, reverse=False):
+def search_tiles(tile, date_range, max_clouds=90, max_nodata=90, reverse=False):
     '''Return a list of PYSTAC Items corresponding to the tile (without T) and the date_range specified'''
     
     # Create the query
@@ -21,7 +21,10 @@ def search_tiles(tile, date_range, max_clouds=90, reverse=False):
         },
         "eo:cloud_cover": {
             "lt": max_clouds
-        }
+        },
+        "s2:nodata_pixel_percentage": {
+            "lt": max_nodata
+        },
       }
     
     catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
@@ -50,10 +53,10 @@ def search_img(coords, date):
 # ----------------------------------------------------------------
 # ************** PLOTTING FUNCTIONS ********************
 # ----------------------------------------------------------------
-def plot_stac_asset(asset, ax=None, **kwargs):
+def plot_stac_asset(asset, ax=None, imshow_args={}, **kwargs):
     """
     Plot a single stac item to an existing ax or a new one (if ax = None)
-    Kwargs will be passed to imshow
+    Kwargs will be passed to subplots
     """
     
     plt.style.use('default')
@@ -65,9 +68,7 @@ def plot_stac_asset(asset, ax=None, **kwargs):
     suffix = asset.href.split('.')[-1]
     href = pc.sign(asset.href)
     
-    print(href)
-
-    if suffix == '.tif':
+    if suffix == 'tif':
         # open the item and downscale by 10x 
         array = xrio.open_rasterio(href, masked=True).squeeze()[::10, ::10]
         
@@ -76,7 +77,7 @@ def plot_stac_asset(asset, ax=None, **kwargs):
         array = plt.imread(href)
     
     # display the resulting array in axis ax
-    ax.imshow(array)
+    ax.imshow(array, **imshow_args)
 
 
 def plot_previews(items, asset='preview', cols=3, base_size=5):

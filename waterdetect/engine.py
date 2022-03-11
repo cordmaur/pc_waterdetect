@@ -445,6 +445,7 @@ class WaterDetect:
         
         # and a watermask with 255 in nodata positions
         nodata_watermask = water_mask.where(cluster_matrix != -1, other=255).astype('uint8')
+        nodata_watermask.rio.set_nodata(255)
         
         # append the final solution
         self.img = self.img.assign({'watermask': water_mask, 'clusters': cluster_matrix, 'nodata_watermask': nodata_watermask})
